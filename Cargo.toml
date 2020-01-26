@@ -1,5 +1,5 @@
 [package]
-name = "hvdos.rs"
+name = "hvdos"
 version = "0.2.0"
 authors = ["Satoshi Moriai <satoshi.moriai@gmail.com>"]
 edition = "2018"
