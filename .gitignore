@@ -1,1 +1,4 @@
+.vscode
 hvdos
+target
+Cargo.lock

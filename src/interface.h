@@ -15,8 +15,8 @@ extern void wreg(hv_vcpuid_t vcpu, hv_x86_reg_t reg, uint64_t v);
 #define DX ((uint16_t)rreg(_vcpu, HV_X86_RDX))
 
 #define pc ((uint16_t)rreg(_vcpu, HV_X86_RIP))
-#define DS rreg(_vcpu, HV_X86_DS)
-#define ES rreg(_vcpu, HV_X86_ES)
+#define DS ((uint16_t)rreg(_vcpu, HV_X86_DS))
+#define ES ((uint16_t)rreg(_vcpu, HV_X86_ES))
 
 #define FLAGS ((uint16_t)rreg(_vcpu, HV_X86_RFLAGS))
 

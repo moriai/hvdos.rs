@@ -8,6 +8,7 @@
 #include <map>
 #include <vector>
 #include <Hypervisor/hv_vmx.h>
+#include <termios.h>
 
 class DOSKernel {
 public:
@@ -26,6 +27,9 @@ private:
     std::vector <bool>   _fdbits;
     uint16_t             _dta;
     int                  _exitStatus;
+    int                  _tty;
+    struct termios       _term;
+    char                 _switchar;
 
 public:
     DOSKernel(char *memory, hv_vcpuid_t vcpu, int argc, char **argv);
@@ -33,12 +37,14 @@ public:
 
 public:
     int dispatch(uint8_t IntNo);
+    int exitStatus() const { return _exitStatus; }
 
 private:
     int int20();
     int int21();
 
 private:
+    int int21Func01();
     int int21Func02();
     int int21Func08();
     int int21Func09();
@@ -52,6 +58,7 @@ private:
     int int21Func30();
     int int21Func33();
     int int21Func35();
+    int int21Func37();
     int int21Func3C();
     int int21Func3D();
     int int21Func3E();
@@ -60,6 +67,7 @@ private:
     int int21Func41();
     int int21Func42();
     int int21Func43();
+    int int21Func45();
     int int21Func4C();
     int int21Func4E();
     int int21Func4F();

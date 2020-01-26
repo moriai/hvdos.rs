@@ -106,7 +106,8 @@ DOSKernel::DOSKernel(char *memory, hv_vcpuid_t vcpu, int argc, char **argv) :
     _memory    (memory),
     _vcpu      (vcpu),
     _dta       (0),
-    _exitStatus(0)
+    _exitStatus(0),
+    _switchar  ('/')
 {
     _fdbits.resize(256);
 
@@ -114,12 +115,33 @@ DOSKernel::DOSKernel(char *memory, hv_vcpuid_t vcpu, int argc, char **argv) :
     _fdtable[1] = 1, _fdbits[1] = true;
     _fdtable[2] = 2, _fdbits[2] = true;
 
+    // Initialize TTY
+    if ((_tty = open("/dev/tty", O_RDWR)) < 0) {
+        std::fprintf(stderr, "Can't open /dev/tty at %s:%d\n", __FILE__, __LINE__);
+        _tty = 0;
+    } else {
+        struct termios t;
+        tcgetattr(_tty, &t);
+        _term = t;
+        t.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL);
+        t.c_oflag |= (OXTABS | OPOST | ONLCR);
+        t.c_oflag &= ~(ONOEOT | OCRNL | ONOCR | ONLRET);
+        t.c_cc[VMIN] = 1;
+        t.c_cc[VTIME] = 0;
+        t.c_cc[VLNEXT] = 0;
+        t.c_cc[VDSUSP] = 0;
+        tcsetattr(_tty, TCSADRAIN, &t);
+    }
+
     // Initialize PSP
     makePSP(0, argc, argv);
 }
 
 DOSKernel::~DOSKernel()
 {
+    if (_tty != 0) {
+        tcsetattr(_tty, TCSADRAIN, &_term);
+    }
 }
 
 int DOSKernel::
@@ -128,7 +150,11 @@ dispatch(uint8_t IntNo)
     switch (IntNo) {
         case 0x20: return int20();
         case 0x21: return int21();
-        default:   break;
+        default:
+#if DEBUG
+            std::fprintf(stderr, "\n[%04x] INT %02Xh/AH=%02Xh/AL=%02Xh\n", pc, IntNo, AH, AL);
+#endif
+            break;
     }
     return STATUS_UNHANDLED;
 }
@@ -136,6 +162,9 @@ dispatch(uint8_t IntNo)
 int DOSKernel::
 int20()
 {
+#if DEBUG
+    std::fprintf(stderr, "\n[%04x] INT 20h/AH=%02Xh/AL=%02Xh\n", pc, AH, AL);
+#endif
     _exitStatus = 0;
     return STATUS_STOP;
 }
@@ -143,11 +172,12 @@ int20()
 int DOSKernel::
 int21()
 {
-#ifdef DEBUG
-    std::fprintf(stderr, "\n[%04x] INT 21/AH=%02Xh\n", pc, AH);
+#if DEBUG
+    std::fprintf(stderr, "\n[%04x] INT 21h/AH=%02Xh/AL=%02Xh\n", pc, AH, AL);
 #endif
 
     switch (AH) {
+        case 0x01: return int21Func01();
         case 0x02: return int21Func02();
         case 0x08: return int21Func08();
         case 0x09: return int21Func09();
@@ -161,6 +191,7 @@ int21()
         case 0x30: return int21Func30();
         case 0x33: return int21Func33();
         case 0x35: return int21Func35();
+        case 0x37: return int21Func37();
         case 0x3C: return int21Func3C();
         case 0x3D: return int21Func3D();
         case 0x3E: return int21Func3E();
@@ -169,6 +200,7 @@ int21()
         case 0x41: return int21Func41();
         case 0x42: return int21Func42();
         case 0x43: return int21Func43();
+        case 0x45: return int21Func45();
         case 0x4C: return int21Func4C();
         case 0x4E: return int21Func4E();
         case 0x4F: return int21Func4F();
@@ -181,11 +213,24 @@ int21()
     return STATUS_UNSUPPORTED;
 }
 
+// DOS 1+ - KEYBOARD INPUT
+int DOSKernel::
+int21Func01()
+{
+    char buf[4];
+    int n = read(_tty, buf, 1);
+    if (n > 0)
+        SET_AL(buf[0]);
+
+    return STATUS_HANDLED;
+}
+
 // DOS 1+ - WRITE CHARACTER TO STANDARD OUTPUT
 int DOSKernel::
 int21Func02()
 {
     putchar(DL);
+    fflush(stdout);
     SET_AL(DL);
     return STATUS_HANDLED;
 }
@@ -249,7 +294,8 @@ int21Func0C()
 int DOSKernel::
 int21Func0E()
 {
-    SET_AL(DL + 'A');
+    //SET_AL(DL + 'A');
+    SET_AL(1);
     return STATUS_HANDLED;
 }
 
@@ -288,12 +334,22 @@ makePSP(uint16_t seg, int argc, char **argv)
     // first FSB = empty file name
     PSP->FCB1[0] = 0x01;
     PSP->FCB1[1] = 0x20;
+#if 0
+    if (argc > 2) {
+        int i = 1, j = 0;
+        while (i <= 8 && argv[2][j] != '.' && argv[2][j] != '\0')
+            PSP->FCB1[i++] = argv[2][j++];
+        while (i <= 8)
+            PSP->FCB1[i++] = ' ';
+    }
+#endif
 
     uint8_t c = 0;
     int j = 0;
-    for (int i = 2; i < argc && c < 0x7E; i++) {
+    for (int i = 0; i < argc && c < 0x7E; i++) {
         j = 0;
-        PSP->CommandLine[c++] = ' ';
+        if (i > 0)
+            PSP->CommandLine[c++] = ' ';
         while (argv[i][j] && c < 0x7E)
             PSP->CommandLine[c++] = argv[i][j++];
     }
@@ -305,7 +361,7 @@ makePSP(uint16_t seg, int argc, char **argv)
 int DOSKernel::
 int21Func25()
 {
-#ifdef DEBUG
+#if DEBUG
     std::fprintf(stderr, "[%04x] SET INTERRUPT VECTOR: 0x%02x to 0x%04x:0x%04x\n", pc, AL, DS, DX);
 #endif
     return STATUS_HANDLED;
@@ -351,11 +407,30 @@ int21Func33()
 int DOSKernel::
 int21Func35()
 {
-#ifdef DEBUG
+#if DEBUG
     std::fprintf(stderr, "\nGET INTERRUPT VECTOR: 0x%02x\n", AL);
 #endif
     SET_ES(0);
     SET_BX(0);
+    return STATUS_HANDLED;
+}
+
+// DOS 2+ - SWITCHAR
+int DOSKernel::
+int21Func37()
+{
+    switch (AL) {
+        case 0:
+            SET_DL(_switchar);
+            break;
+        case 1:
+            _switchar = DL;
+            break;
+        default:
+            SET_AL(0xff);
+            break;
+    }
+
     return STATUS_HANDLED;
 }
 
@@ -569,6 +644,36 @@ int21Func43()
             std::fprintf(stderr, "Unknown GetSetFileAttributes "
                     "subfunction: 0x%02X\n", AL);
             return STATUS_UNSUPPORTED;
+    }
+
+    return STATUS_HANDLED;
+}
+
+// DOS 2+ - DUP - DUPLICATE FILE HANDLE
+int DOSKernel::
+int21Func45()
+{
+    int FD     = BX;
+    int HostFD = findFD(FD);
+    if (HostFD < 0) {
+        SETC(1);
+        SET_AX(DOS_EBADF);
+    } else {
+        int HostFD2 = ::dup(HostFD);
+        if (HostFD2 < 0) {
+            SETC(1);
+            SET_AX(DOS_ENFILE);
+        } else {
+            int FD2 = allocFD(HostFD2);
+            if (FD2 < 0) {
+                ::close(HostFD2);
+                SETC(1);
+                SET_AX(DOS_ENFILE);
+            } else {
+                SETC(0);
+                SET_AX(FD2);
+            }
+        }
     }
 
     return STATUS_HANDLED;

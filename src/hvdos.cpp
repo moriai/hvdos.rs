@@ -10,7 +10,7 @@
 #include "interface.h"
 #include "DOSKernel.h"
 
-//#define DEBUG 1
+#define DEBUG 1
 
 /* read GPR */
 uint64_t
@@ -97,6 +97,9 @@ main(int argc, char **argv)
 	if (!(vm_mem = valloc(VM_MEM_SIZE))) {
 		abort();
 	}
+#if DEBUG
+	printf("vm start = 0x%llx, size = 0x%x\n", (uint64_t)vm_mem, VM_MEM_SIZE);
+#endif
 	/* map a segment of guest physical memory into the guest physical address
 	 * space of the vm (at address 0) */
 	if (hv_vm_map(vm_mem, 0, VM_MEM_SIZE, HV_MEMORY_READ | HV_MEMORY_WRITE
