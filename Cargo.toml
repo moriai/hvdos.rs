@@ -1,6 +1,6 @@
 [package]
-name = "hvdos-rs"
-version = "0.1.4"
+name = "hvdos.rs"
+version = "0.2.0"
 authors = ["Satoshi Moriai <satoshi.moriai@gmail.com>"]
 edition = "2018"
 build = "build.rs"
