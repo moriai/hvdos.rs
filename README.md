@@ -16,7 +16,7 @@ See [pagetable.com/?p=764](http://www.pagetable.com/?p=764) for details.
 
 See [LICENSE.txt](LICENSE.txt) (2-clause-BSD).
 
-In order to simplify use of this code as a template, you can consider any parts from "hvdos.cpp" and "interface.h" as being in the public domain.
+In order to simplify use of this code as a template, you can consider any parts from "src/main.rs" and "interface.h" as being in the public domain.
 
 ## Original Author
 
