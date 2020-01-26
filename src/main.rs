@@ -1,3 +1,9 @@
+// Copyright (c) 2009-present, the hvdos developers. All Rights Reserved.
+// Copyright (c) 2020, Satoshi Moriai.
+// Read LICENSE.txt for licensing information.
+//
+// hvdos.rs - a simple DOS emulator based on the OS X 10.10 Hypervisor.framework
+
 use xhypervisor::*;
 use xhypervisor::consts::vmcs::*;
 use xhypervisor::consts::vmx_exit;

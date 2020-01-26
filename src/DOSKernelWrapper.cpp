@@ -1,3 +1,6 @@
+// Copyright (c) 2020, Satoshi Moriai.
+// Read LICENSE.txt for licensing information.
+
 #include "DOSKernel.h"
 #include <Hypervisor/hv.h>
 

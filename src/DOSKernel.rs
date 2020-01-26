@@ -1,3 +1,6 @@
+// Copyright (c) 2020, Satoshi Moriai.
+// Read LICENSE.txt for licensing information.
+
 use std::os::raw::{c_char,c_uchar,c_int,c_uint};
 
 pub enum DOSKernelInst {}
