@@ -18,6 +18,7 @@ See [LICENSE.txt](LICENSE.txt) (2-clause-BSD).
 
 In order to simplify use of this code as a template, you can consider any parts from "src/main.rs" and "interface.h" as being in the public domain.
 
-## Original Author
+## Author
 
-Michael Steil <mist64@mac.com>
+Original: Michael Steil <mist64@mac.com>  
+Rust version: [Satoshi Moriai](https://github.com/moriai)
