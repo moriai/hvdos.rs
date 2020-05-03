@@ -24,6 +24,88 @@ fn cap2ctrl(cap: u64, ctrl: u64) -> u64 {
     (ctrl | (cap & 0xffffffff)) & (cap >> 32)
 }
 
+trait VMCS {
+     fn setup_vmcs(&self, trace: bool) -> Result<(), Error>;
+}
+
+impl VMCS for vCPU {
+    fn setup_vmcs(&self, trace: bool) -> Result<(), Error> {
+        // get hypervisor enforced capabilities of the machine, (see Intel docs)
+        let vmx_cap_pinbased = read_vmx_cap(&VMXCap::PINBASED)?;
+        let vmx_cap_procbased = read_vmx_cap(&VMXCap::PROCBASED)?;
+        let vmx_cap_procbased2 = read_vmx_cap(&VMXCap::PROCBASED2)?;
+        let vmx_cap_entry = read_vmx_cap(&VMXCap::ENTRY)?;
+
+        //   see Intel SDM Vol.3, Tables 24-5, 24-6 & 24-7
+        self.write_vmcs(VMCS_CTRL_PIN_BASED, cap2ctrl(vmx_cap_pinbased, 0))?;
+        self.write_vmcs(VMCS_CTRL_CPU_BASED, cap2ctrl(vmx_cap_procbased,
+            if trace { vmx_cap::CPU_BASED_MTF } else { 0 } |
+            vmx_cap::CPU_BASED_HLT |
+            vmx_cap::CPU_BASED_CR8_LOAD |
+            vmx_cap::CPU_BASED_CR8_STORE))?;
+        self.write_vmcs(VMCS_CTRL_CPU_BASED2, cap2ctrl(vmx_cap_procbased2, 0))?;
+        //   see Table 24-13
+        self.write_vmcs(VMCS_CTRL_VMENTRY_CONTROLS, cap2ctrl(vmx_cap_entry, 0))?;
+        //   see Sec. 24.6.3 & 25.2
+        self.write_vmcs(VMCS_CTRL_EXC_BITMAP, 0xffffffff)?;
+        self.write_vmcs(VMCS_CTRL_CR0_MASK, 0x60000000)?;
+        self.write_vmcs(VMCS_CTRL_CR0_SHADOW, 0)?;
+        self.write_vmcs(VMCS_CTRL_CR4_MASK, 0)?;
+        self.write_vmcs(VMCS_CTRL_CR4_SHADOW, 0)?;
+        // set VMCS guest state fields
+        self.write_vmcs(VMCS_GUEST_CS, 0)?;
+        self.write_vmcs(VMCS_GUEST_CS_LIMIT, 0xffff)?;
+        self.write_vmcs(VMCS_GUEST_CS_AR, 0x9b)?;
+        self.write_vmcs(VMCS_GUEST_CS_BASE, 0)?;
+
+        self.write_vmcs(VMCS_GUEST_DS, 0)?;
+        self.write_vmcs(VMCS_GUEST_DS_LIMIT, 0xffff)?;
+        self.write_vmcs(VMCS_GUEST_DS_AR, 0x93)?;
+        self.write_vmcs(VMCS_GUEST_DS_BASE, 0)?;
+
+        self.write_vmcs(VMCS_GUEST_ES, 0)?;
+        self.write_vmcs(VMCS_GUEST_ES_LIMIT, 0xffff)?;
+        self.write_vmcs(VMCS_GUEST_ES_AR, 0x93)?;
+        self.write_vmcs(VMCS_GUEST_ES_BASE, 0)?;
+
+        self.write_vmcs(VMCS_GUEST_FS, 0)?;
+        self.write_vmcs(VMCS_GUEST_FS_LIMIT, 0xffff)?;
+        self.write_vmcs(VMCS_GUEST_FS_AR, 0x93)?;
+        self.write_vmcs(VMCS_GUEST_FS_BASE, 0)?;
+
+        self.write_vmcs(VMCS_GUEST_GS, 0)?;
+        self.write_vmcs(VMCS_GUEST_GS_LIMIT, 0xffff)?;
+        self.write_vmcs(VMCS_GUEST_GS_AR, 0x93)?;
+        self.write_vmcs(VMCS_GUEST_GS_BASE, 0)?;
+
+        self.write_vmcs(VMCS_GUEST_SS, 0)?;
+        self.write_vmcs(VMCS_GUEST_SS_LIMIT, 0xffff)?;
+        self.write_vmcs(VMCS_GUEST_SS_AR, 0x93)?;
+        self.write_vmcs(VMCS_GUEST_SS_BASE, 0)?;
+
+        self.write_vmcs(VMCS_GUEST_LDTR, 0)?;
+        self.write_vmcs(VMCS_GUEST_LDTR_LIMIT, 0)?;
+        self.write_vmcs(VMCS_GUEST_LDTR_AR, 0x10000)?;
+        self.write_vmcs(VMCS_GUEST_LDTR_BASE, 0)?;
+
+        self.write_vmcs(VMCS_GUEST_TR, 0)?;
+        self.write_vmcs(VMCS_GUEST_TR_LIMIT, 0)?;
+        self.write_vmcs(VMCS_GUEST_TR_AR, 0x83)?;
+        self.write_vmcs(VMCS_GUEST_TR_BASE, 0)?;
+
+        self.write_vmcs(VMCS_GUEST_GDTR_LIMIT, 0)?;
+        self.write_vmcs(VMCS_GUEST_GDTR_BASE, 0)?;
+
+        self.write_vmcs(VMCS_GUEST_IDTR_LIMIT, 0)?;
+        self.write_vmcs(VMCS_GUEST_IDTR_BASE, 0)?;
+
+        self.write_vmcs(VMCS_GUEST_CR0, 0x20)?;
+        self.write_vmcs(VMCS_GUEST_CR3, 0x0)?;
+        self.write_vmcs(VMCS_GUEST_CR4, 0x2000)?;
+        Ok(())
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
@@ -70,12 +152,6 @@ fn main() {
     // create a VM instance for the current task 
     create_vm().unwrap();
 
-    // get hypervisor enforced capabilities of the machine, (see Intel docs)
-    let vmx_cap_pinbased = read_vmx_cap(&VMXCap::PINBASED).unwrap();
-    let vmx_cap_procbased = read_vmx_cap(&VMXCap::PROCBASED).unwrap();
-    let vmx_cap_procbased2 = read_vmx_cap(&VMXCap::PROCBASED2).unwrap();
-    let vmx_cap_entry = read_vmx_cap(&VMXCap::ENTRY).unwrap();
-
     // allocate some guest physical memory
     const VM_MEM_SIZE: usize = 1 * 1024 * 1024;
     let mut vm_mem: Vec<u8> = vec![0u8;VM_MEM_SIZE];
@@ -92,72 +168,7 @@ fn main() {
 
     // vCPU setup
     // set VMCS control fields
-    //   see Intel SDM Vol.3, Tables 24-5, 24-6 & 24-7
-    vcpu.write_vmcs(VMCS_CTRL_PIN_BASED, cap2ctrl(vmx_cap_pinbased, 0)).unwrap();
-    vcpu.write_vmcs(VMCS_CTRL_CPU_BASED, cap2ctrl(vmx_cap_procbased,
-        if trace { vmx_cap::CPU_BASED_MTF } else { 0 } |
-        vmx_cap::CPU_BASED_HLT |
-        vmx_cap::CPU_BASED_CR8_LOAD |
-        vmx_cap::CPU_BASED_CR8_STORE)).unwrap();
-    vcpu.write_vmcs(VMCS_CTRL_CPU_BASED2, cap2ctrl(vmx_cap_procbased2, 0)).unwrap();
-    //   see Table 24-13
-    vcpu.write_vmcs(VMCS_CTRL_VMENTRY_CONTROLS, cap2ctrl(vmx_cap_entry, 0)).unwrap();
-    //   see Sec. 24.6.3 & 25.2
-    vcpu.write_vmcs(VMCS_CTRL_EXC_BITMAP, 0xffffffff).unwrap();
-    vcpu.write_vmcs(VMCS_CTRL_CR0_MASK, 0x60000000).unwrap();
-    vcpu.write_vmcs(VMCS_CTRL_CR0_SHADOW, 0).unwrap();
-    vcpu.write_vmcs(VMCS_CTRL_CR4_MASK, 0).unwrap();
-    vcpu.write_vmcs(VMCS_CTRL_CR4_SHADOW, 0).unwrap();
-    // set VMCS guest state fields
-    vcpu.write_vmcs(VMCS_GUEST_CS, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_CS_LIMIT, 0xffff).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_CS_AR, 0x9b).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_CS_BASE, 0).unwrap();
-
-    vcpu.write_vmcs(VMCS_GUEST_DS, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_DS_LIMIT, 0xffff).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_DS_AR, 0x93).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_DS_BASE, 0).unwrap();
-
-    vcpu.write_vmcs(VMCS_GUEST_ES, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_ES_LIMIT, 0xffff).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_ES_AR, 0x93).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_ES_BASE, 0).unwrap();
-
-    vcpu.write_vmcs(VMCS_GUEST_FS, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_FS_LIMIT, 0xffff).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_FS_AR, 0x93).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_FS_BASE, 0).unwrap();
-
-    vcpu.write_vmcs(VMCS_GUEST_GS, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_GS_LIMIT, 0xffff).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_GS_AR, 0x93).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_GS_BASE, 0).unwrap();
-
-    vcpu.write_vmcs(VMCS_GUEST_SS, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_SS_LIMIT, 0xffff).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_SS_AR, 0x93).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_SS_BASE, 0).unwrap();
-
-    vcpu.write_vmcs(VMCS_GUEST_LDTR, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_LDTR_LIMIT, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_LDTR_AR, 0x10000).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_LDTR_BASE, 0).unwrap();
-
-    vcpu.write_vmcs(VMCS_GUEST_TR, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_TR_LIMIT, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_TR_AR, 0x83).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_TR_BASE, 0).unwrap();
-
-    vcpu.write_vmcs(VMCS_GUEST_GDTR_LIMIT, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_GDTR_BASE, 0).unwrap();
-
-    vcpu.write_vmcs(VMCS_GUEST_IDTR_LIMIT, 0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_IDTR_BASE, 0).unwrap();
-
-    vcpu.write_vmcs(VMCS_GUEST_CR0, 0x20).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_CR3, 0x0).unwrap();
-    vcpu.write_vmcs(VMCS_GUEST_CR4, 0x2000).unwrap();
+    vcpu.setup_vmcs(trace).unwrap();
 
     let status = {
         // initialize DOS emulation
@@ -175,8 +186,7 @@ fn main() {
         vcpu.write_register(&x86Reg::RSP, 0xfff8).unwrap(); // should be 0xfffe in legacy 16bit mode
 
         // vCPU run loop
-        let mut stop = false;
-        while !stop {
+        loop {
             vcpu.run().unwrap();
 
             // handle VMEXIT
@@ -191,13 +201,13 @@ fn main() {
                             vcpu.write_register(&x86Reg::RIP, vcpu.read_register(&x86Reg::RIP).unwrap() + 2).unwrap();
                         }
                         DOSKernel::STATUS_UNSUPPORTED | DOSKernel::STATUS_STOP => {
-                            stop = true;
+                            break;
                         }
                         DOSKernel::STATUS_NORETURN => {
                             // The kernel changed the PC.
                         }
                         _ => {
-                            stop = true;
+                            break;
                         }
                     }
                 }
@@ -227,7 +237,7 @@ fn main() {
                     if debug || trace {
                         eprintln!("{}", "HLT".green());
                     }
-                    stop = true;
+                    break;
                 }
                 vmx_exit::VMX_REASON_EPT_VIOLATION => {
                     // disambiguate between EPT cold misses and MMIO
@@ -236,7 +246,7 @@ fn main() {
                 // ... many more exit reasons go here ...
                 _ => {
                     eprintln!("{}", format!("Unhandled VMEXIT ({})", exit_reason).yellow());
-                    stop = true;
+                    break;
                 }
             }
         }
