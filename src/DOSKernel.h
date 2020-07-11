@@ -7,7 +7,7 @@
 #include <string>
 #include <map>
 #include <vector>
-#include <Hypervisor/hv_vmx.h>
+#include <Hypervisor/hv.h>
 #include <termios.h>
 
 class DOSKernel {
